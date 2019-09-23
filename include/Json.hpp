@@ -1,4 +1,5 @@
 #include <list>
+#include <vector>
 #include <exception>
 #include <iostream>
 
@@ -78,7 +79,6 @@ public:
   {
     if(this->m_pDataNode == NULL)
 	  return ;
-    std::cout << "destory JsonNode " << this->m_strKeyName << std::endl ;
     switch(this->m_NodeType)
       {
       case JSON_ERR:
@@ -132,6 +132,7 @@ public:
 	}
       }
     this->m_pDataNode = NULL ;
+    std::cout << "destory JsonNode " << this->m_strKeyName << std::endl ;
   }
   void set_node_value(void* _pVal)
   {
@@ -222,6 +223,48 @@ public:
   JsonNode*       m_pParentNode ;
   void*           m_pDataNode ;
   std::string     m_strKeyName ;
+public: // 数据访问
+  JsonNode* get_node_by_path(const std::string& _strPath) // "/aaa/bbb/ccc"
+  {
+    std::vector<std::string> vecIndex ;
+    size_t posSep = 0 , posBeg = 1;
+    while(posBeg != std::string::npos)
+      {
+	posSep = _strPath.find('/' , posBeg) ;
+	if(posSep == std::string::npos)
+	  {
+	    break ;
+	  }
+	vecIndex.push_back(_strPath.substr(posBeg , posSep - posBeg)) ;
+	posBeg = posSep + 1 ;
+      }
+    vecIndex.push_back(_strPath.substr(posBeg)) ;
+    return this->deep_visit_node(vecIndex , 0) ;
+  }
+  JsonNode* deep_visit_node(std::vector<std::string>& _vecPath , size_t _iLayer)
+  {
+    if(_iLayer == _vecPath.size())
+      {
+	return this ;
+      }
+    if(this->m_NodeType != JSON_OBJ)
+      {
+	return NULL ;
+      }
+    std::string strKey = _vecPath[_iLayer] ;
+    JsonNode* pTmpNode ;
+    ListJsonNode* pListNode = (ListJsonNode*)this->m_pDataNode ;
+    ListJsonNode::iterator begIt , endIt ;
+    for( begIt = pListNode->begin() , endIt = pListNode->end() ; begIt != endIt ; ++begIt)
+      {
+	pTmpNode = *begIt ;
+	if(pTmpNode->m_strKeyName == strKey)
+	  {
+	    return pTmpNode->deep_visit_node(_vecPath , _iLayer + 1) ;
+	  }
+      }
+    return NULL ;
+  }
 };
 
 
@@ -266,20 +309,25 @@ private:
 class ParseNode
 {
 public:
-  ParseNode(const std::string& _strJson){}
+  ParseNode(const std::string& _strJson)
+  {
+    this->parse_json(_strJson) ;
+  }
   ~ParseNode()
   {
     this->destroy_jsonnode() ;
   }
   void destroy_jsonnode()
   {
-    std::cout << "destory ParseNode" << std::endl ;
     if(this->m_pRootJsonNode != NULL)
       {
 	delete this->m_pRootJsonNode ;
       }
     this->m_pRootJsonNode = NULL ;
+    std::cout << "destory ParseNode" << std::endl ;
   }
+  /*解析逻辑处理*/
+public:
   void parse_json(const std::string& _strJson)
   {
     this->m_pFocus = _strJson.c_str() ;
@@ -303,18 +351,22 @@ public:
       }
     catch (std::string strErr)
       {
+	std::cout << "parse exception" << std::endl ;
 	std::cout << strErr << std::endl ;
+	std::cout << "Err:" << this->m_strErr << std::endl ;
+	std::cout << "Tip:" << this->m_strTip << std::endl ;
       }
     catch(const char* szErr)
       {
+	std::cout << "parse exception" << std::endl ;
 	std::cout << szErr << std::endl ;
+	std::cout << "Err:" << this->m_strErr << std::endl ;
+	std::cout << "Tip:" << this->m_strTip << std::endl ;
       }
     if(!this->m_bStatus)
       {
 	this->destroy_jsonnode() ;
       }
-    std::cout << "Err:" << this->m_strErr << std::endl ;
-    std::cout << "Tip:" << this->m_strTip << std::endl ;
   }
 
   void parse_list()
@@ -485,56 +537,57 @@ public:
     std::string  m_strVal ;
     ModeStack    m_ModeStack ;
     JsonNode* m_pRootJsonNode ;
-  public:
-    void skip_black_char(bool _bThrow = true)
-    {
-      for( ; this->m_pFocus < this->m_pTerminal ; ++(this->m_pFocus))
-	{
-	  if(*(this->m_pFocus) == ' ' || *(this->m_pFocus) == '\t' || *(this->m_pFocus) == '\n')
-	    continue ;
-	  return ;
-	}
-      if(_bThrow)
-	{
-	  this->m_strErr = "does't except finished without \"" ;
-	  this->m_strTip = std::string(this->m_pFocus , this->m_pTerminal) ;
-	  throw this->m_strErr ;
+  /*解析数据类型转换*/
+public:
+  void skip_black_char(bool _bThrow = true)
+  {
+    for( ; this->m_pFocus < this->m_pTerminal ; ++(this->m_pFocus))
+      {
+	if(*(this->m_pFocus) == ' ' || *(this->m_pFocus) == '\t' || *(this->m_pFocus) == '\n')
+	  continue ;
+	return ;
+      }
+    if(_bThrow)
+      {
+	this->m_strErr = "does't except finished without \"" ;
+	this->m_strTip = std::string(this->m_pFocus , this->m_pTerminal) ;
+	throw this->m_strErr ;
 
-	}
-    }
+      }
+  }
 
-    std::string json_str()
-    {
-      const char* pStrBeg = this->m_pFocus ;
-      for( ; this->m_pFocus < this->m_pTerminal ; ++(this->m_pFocus))
-	{
-	  if(*(this->m_pFocus) == ' ' || *(this->m_pFocus) == '\t' || *(this->m_pFocus) == '\n')
-	    continue ;
-	  break ;
-	}
-      if (*(this->m_pFocus) != '"')
-	{
-	  this->m_strErr = "invalid string" ;
-	  this->m_strTip = std::string(pStrBeg , this->m_pTerminal) ;
-	  throw this->m_strErr ;
-	}
-      pStrBeg = ++(this->m_pFocus) ;
-      for( ; this->m_pFocus < this->m_pTerminal ; ++(this->m_pFocus))
-	{
-	  if(*(this->m_pFocus) == '"' && *(this->m_pFocus - 1) != '\\')
-	    {
-	      return std::string(pStrBeg , this->m_pFocus ) ;
-	    }
-	}
-      this->m_strErr = "invalid string , json finish must with '}'" ;
-      this->m_strTip = std::string(pStrBeg , this->m_pTerminal) ;
-      throw this->m_strErr ;
-    }
-    std::string json_int()
-    {
-      const char* pNumber = this->m_pFocus ;
-      for( ; this->m_pFocus < this->m_pTerminal ; ++(this->m_pFocus))
-	{
+  std::string json_str()
+  {
+    const char* pStrBeg = this->m_pFocus ;
+    for( ; this->m_pFocus < this->m_pTerminal ; ++(this->m_pFocus))
+      {
+	if(*(this->m_pFocus) == ' ' || *(this->m_pFocus) == '\t' || *(this->m_pFocus) == '\n')
+	  continue ;
+	break ;
+      }
+    if (*(this->m_pFocus) != '"')
+      {
+	this->m_strErr = "invalid string" ;
+	this->m_strTip = std::string(pStrBeg , this->m_pTerminal) ;
+	throw this->m_strErr ;
+      }
+    pStrBeg = ++(this->m_pFocus) ;
+    for( ; this->m_pFocus < this->m_pTerminal ; ++(this->m_pFocus))
+      {
+	if(*(this->m_pFocus) == '"' && *(this->m_pFocus - 1) != '\\')
+	  {
+	    return std::string(pStrBeg , this->m_pFocus ) ;
+	  }
+      }
+    this->m_strErr = "invalid string , json finish must with '}'" ;
+    this->m_strTip = std::string(pStrBeg , this->m_pTerminal) ;
+    throw this->m_strErr ;
+  }
+  std::string json_int()
+  {
+    const char* pNumber = this->m_pFocus ;
+    for( ; this->m_pFocus < this->m_pTerminal ; ++(this->m_pFocus))
+      {
 	  if(*(this->m_pFocus) == ',' || *(this->m_pFocus) == '}' || *(this->m_pFocus) == ']')
 	    break ;
 	}
@@ -629,11 +682,115 @@ public:
       this->m_bStatus = false ;
       throw this->m_strErr ;
     }
+  /*解析结果定位*/
+public:
+  std::string get_str_by_path(const std::string _strPath , std::string _strDefault="") // "/aaa/bbb/ccc"
+  {
+    JsonNode* pTmpNode = this->m_pRootJsonNode->get_node_by_path(_strPath) ;
+    if(pTmpNode == NULL)
+      {
+	return _strDefault ;
+      }
+    switch(pTmpNode->m_NodeType)
+      {
+      case JSON_STR:
+	{
+	  return *((std::string*)pTmpNode->m_pDataNode) ;
+	}
+      case JSON_INT:
+	{
+	  char buf[32] ;
+	  snprintf(buf , 31 , "%d" , *((int*)pTmpNode->m_pDataNode)) ;
+	  return buf ;
+	}
+      case JSON_LONGLONG:
+	{
+	  char buf[64] ;
+	  snprintf(buf , 63 , "%lld" , *((long long*)pTmpNode->m_pDataNode)) ;
+	  return buf ;
+	}
+      case JSON_DOUBLE:
+	{
+	  char buf[64] ;
+	  snprintf(buf , 31 , "%lf" , *((double*)pTmpNode->m_pDataNode)) ;
+	  return buf ;
+	}
+      default:
+	return _strDefault ;
+      }
+  }
+
   
-  };
+  bool  get_int_by_path(const std::string _strPath , bool _bDefault = false)
+  {
+    JsonNode* pTmpNode = this->m_pRootJsonNode->get_node_by_path(_strPath) ;
+    if(pTmpNode == NULL)
+      {
+	return _bDefault ;
+      }
+    switch(pTmpNode->m_NodeType)
+      {
+      case JSON_INT:
+	{
+	  return *((int*)pTmpNode->m_pDataNode) ;
+	}
+      default:
+	return _bDefault ;
+      }
+  }
 
+  int get_null_by_path(const std::string _strPath , int _iDefault = false)
+  {
+    JsonNode* pTmpNode = this->m_pRootJsonNode->get_node_by_path(_strPath) ;
+    if(pTmpNode == NULL)
+      {
+	return _iDefault ;
+      }
+    switch(pTmpNode->m_NodeType)
+      {
+      case JSON_INT:
+	{
+	  return *((int *)pTmpNode->m_pDataNode) ;
+	}
+      default:
+	return _iDefault ;
+      }
+  }
 
+  long  long  get_llong_by_path(const std::string _strPath , long long _llDefault = 0) // "/aaa/bbb/ccc"
+  {
+    JsonNode* pTmpNode = this->m_pRootJsonNode->get_node_by_path(_strPath) ;
+    if(pTmpNode == NULL)
+      {
+	return _llDefault ;
+      }
+    switch(pTmpNode->m_NodeType)
+      {
+      case JSON_LONGLONG:
+	{
+	  return *((long long*)pTmpNode->m_pDataNode) ;
+	}
+      default:
+	return _llDefault ;
+      }
+  }
+  
+  double get_double_by_path(const std::string _strPath , double _dDefault = 0) // "/aaa/bbb/ccc"
+  {
+    JsonNode* pTmpNode = this->m_pRootJsonNode->get_node_by_path(_strPath) ;
+    if(pTmpNode == NULL)
+      {
+	return _dDefault ;
+      }
+    switch(pTmpNode->m_NodeType)
+      {
+      case JSON_DOUBLE:
+	{
+	  return *((double*)pTmpNode->m_pDataNode) ;
+	}
+      default:
+	return _dDefault ;
+      }
+  }
 
-
-
-
+} ;
